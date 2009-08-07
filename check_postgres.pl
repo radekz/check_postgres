@@ -4458,7 +4458,7 @@ sub check_same_schema {
 	my %filter;
 	if (exists $opt{warning} and length $opt{warning}) {
 		for my $phrase (split /\s+/ => $opt{warning}) {
-			for my $type (qw/schema user table view index sequence constraint trigger function/) {
+			for my $type (qw/schema user table view index sequence constraint trigger function language type/) {
 				if ($phrase =~ /^no${type}s?$/i) {
 					$filter{"no${type}s"} = 1;
 				}
@@ -4562,17 +4562,19 @@ sub check_same_schema {
         }
 
 		## Get a list of all types
-		$SQL = q{SELECT typname, oid FROM pg_type};
-		$info = run_command($SQL, { dbuser => $opt{dbuser}[$x-1], dbnumber => $x } );
-		for $db (@{$info->{db}}) {
-            for my $line (split /\n/, $db->{slurp}) {
-                unless ($line =~ /^\s*(.+?)\s+\|\s+(\d+).*/gmo) {
-                    warn "Query processing failed:\n$line\nfrom $SQL\n";
-                    next;
-                }
-				$thing{$x}{type}{$2} = $1;
+		if (! exists $filter{notypes} && ! exists $filter{nofunctions}) {
+			$SQL = q{SELECT typname, oid FROM pg_type};
+			$info = run_command($SQL, { dbuser => $opt{dbuser}[$x-1], dbnumber => $x } );
+			for $db (@{$info->{db}}) {
+				for my $line (split /\n/, $db->{slurp}) {
+					unless ($line =~ /^\s*(.+?)\s+\|\s+(\d+).*/gmo) {
+						warn "Query processing failed:\n$line\nfrom $SQL\n";
+						next;
+					}
+					$thing{$x}{type}{$2} = $1;
+				}
+				$saved_db = $db if ! defined $saved_db;
 			}
-			$saved_db = $db if ! defined $saved_db;
 		}
 
 		## Get a list of all triggers
@@ -4705,37 +4707,41 @@ SQL
 		}
 
 		## Get a list of all functions
-		$SQL = q{SELECT quote_ident(nspname), quote_ident(proname), proargtypes, md5(prosrc), }
-            . q{proisstrict, proretset, provolatile }
-			. q{FROM pg_proc JOIN pg_namespace n ON (n.oid = pronamespace)};
-		$info = run_command($SQL, { dbuser => $opt{dbuser}[$x-1], dbnumber => $x } );
-		for $db (@{$info->{db}}) {
-            for my $line (split /\n/, $db->{slurp}) {
-                unless ($line =~ /^\s*(.+?)\s+\| (.*?)\s+\| (.*?)\s+\| (.*?)\s+\| (.*?)\s+\| (.*?)\s+\| (.*?)\s*/gmo) {
-                    warn "Query processing failed:\n$line\nfrom $SQL\n";
-                    next;
-                }
-				my ($schema,$name,$args,$md5,$isstrict,$retset,$volatile) = ($1,$2,$3,$4,$5,$6,$7);
-				$args =~ s/(\d+)/$thing{$x}{type}{$1}/g;
-				$args =~ s/^\s*(.*)\s*$/($1)/;
-				$thing{$x}{functions}{"${schema}.${name}${args}"} = { md5 => $md5,
-                                                                isstrict => $isstrict,
-                                                                retset => $retset,
-                                                                volatile => $volatile,
-                                                           };
+		if (! exists $filter{nofunctions}) {
+			$SQL = q{SELECT quote_ident(nspname), quote_ident(proname), proargtypes, md5(prosrc), }
+				. q{proisstrict, proretset, provolatile }
+				. q{FROM pg_proc JOIN pg_namespace n ON (n.oid = pronamespace)};
+			$info = run_command($SQL, { dbuser => $opt{dbuser}[$x-1], dbnumber => $x } );
+			for $db (@{$info->{db}}) {
+				for my $line (split /\n/, $db->{slurp}) {
+					unless ($line =~ /^\s*(.+?)\s+\| (.*?)\s+\| (.*?)\s+\| (.*?)\s+\| (.*?)\s+\| (.*?)\s+\| (.*?)\s*/gmo) {
+						warn "Query processing failed:\n$line\nfrom $SQL\n";
+						next;
+					}
+					my ($schema,$name,$args,$md5,$isstrict,$retset,$volatile) = ($1,$2,$3,$4,$5,$6,$7);
+					$args =~ s/(\d+)/$thing{$x}{type}{$1}/g;
+					$args =~ s/^\s*(.*)\s*$/($1)/;
+					$thing{$x}{functions}{"${schema}.${name}${args}"} = { md5 => $md5,
+																	isstrict => $isstrict,
+																	retset => $retset,
+																	volatile => $volatile,
+															   };
+				}
 			}
 		}
 
 		## Get a list of all languages
-		$SQL = q{SELECT lanname FROM pg_language};
-		$info = run_command($SQL, { dbuser => $opt{dbuser}[$x-1], dbnumber => $x } );
-		for $db (@{$info->{db}}) {
-            for my $line (split /\n/, $db->{slurp}) {
-                unless ($line =~ /^\s*(\w+)\s*/gmo) {
-                    warn "Query processing failed:\n$line\nfrom $SQL\n";
-                    next;
-                }
-				$thing{$x}{language}{$1} = 1;
+		if (! exists $filter{nolanguages}) {
+			$SQL = q{SELECT lanname FROM pg_language};
+			$info = run_command($SQL, { dbuser => $opt{dbuser}[$x-1], dbnumber => $x } );
+			for $db (@{$info->{db}}) {
+				for my $line (split /\n/, $db->{slurp}) {
+					unless ($line =~ /^\s*(\w+)\s*/gmo) {
+						warn "Query processing failed:\n$line\nfrom $SQL\n";
+						next;
+					}
+					$thing{$x}{language}{$1} = 1;
+				}
 			}
 		}
 
@@ -5250,14 +5256,26 @@ SQL
 	}
 
 	## Compare languages
+  LANGUAGE:
 	for my $name (sort keys %{$thing{1}{language}}) {
+		if (exists $filter{nolanguage_regex}) {
+			for my $regex (@{$filter{nolanguage_regex}}) {
+				next LANGUAGE if $name =~ /$regex/;
+			}
+		}
 		if (!exists $thing{2}{language}{$name}) {
 			push @{$fail{language}{notexist}{1}} => $name;
 			$failcount++;
 			next;
 		}
 	}
+  LANGUAGE:
 	for my $name (sort keys %{$thing{2}{language}}) {
+		if (exists $filter{nolanguage_regex}) {
+			for my $regex (@{$filter{nolanguage_regex}}) {
+				next LANGUAGE if $name =~ /$regex/;
+			}
+		}
 		if (!exists $thing{1}{language}{$name}) {
 			push @{$fail{language}{notexist}{2}} => $name;
 			$failcount++;
