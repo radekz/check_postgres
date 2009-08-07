@@ -1024,13 +1024,13 @@ functions.</p>
 parameter ending in the number 2, such as &quot;--dbport2=5543&quot;</p>
 <p>Example 1: Verify that two databases on hosts star and line are the same:</p>
 <pre>
-  check_postgres_same_schema --dbhost=star --dbhost=line</pre>
+  check_postgres_same_schema --dbhost=star --dbhost2=line</pre>
 <p>Example 2: Same as before, but exclude any triggers with &quot;slony&quot; in their name</p>
 <pre>
-  check_postgres_same_schema --dbhost=star --dbhost=line --warning=&quot;notrigger=slony&quot;</pre>
-<p>Example 2: Same as before, but also exclude all indexes</p>
+  check_postgres_same_schema --dbhost=star --dbhost2=line --warning=&quot;notrigger=slony&quot;</pre>
+<p>Example 3: Same as before, but also exclude all indexes</p>
 <pre>
-  check_postgres_same_schema --dbhost=star --dbhost=line --warning=&quot;notrigger=slony noindexes&quot;</pre>
+  check_postgres_same_schema --dbhost=star --dbhost2=line --warning=&quot;notrigger=slony noindexes&quot;</pre>
 <p>
 </p>
 <h2><a name="sequence"><strong>sequence</strong></a></h2>
