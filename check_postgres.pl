@@ -4522,7 +4522,7 @@ sub check_same_schema {
                 . q{FROM pg_class c }
                 . q{JOIN pg_namespace n ON (n.oid = c.relnamespace) }
                 . q{JOIN pg_user u ON (u.usesysid = c.relowner) }
-                . q{WHERE nspname !~ '^pg_t'};
+                . q{WHERE nspname !~ '^(pg_t.+|pg_catalog|information_schema)$'};
             exists $filter{notriggers}  and $SQL .= q{ AND relkind <> 'r'};
             exists $filter{noviews}     and $SQL .= q{ AND relkind <> 'v'};
             exists $filter{noindexes}   and $SQL .= q{ AND relkind <> 'i'};
@@ -4606,7 +4606,8 @@ sub check_same_schema {
 			. q{COALESCE(character_maximum_length, 0), }
 			. q{COALESCE(numeric_precision, 0), }
 			. q{COALESCE(numeric_scale,0) }
-			. q{FROM information_schema.columns};
+			. q{FROM information_schema.columns }
+			. q{WHERE table_schema !~ '^(pg_t.+|pg_catalog|information_schema)$'};
 		$info = run_command($SQL, { dbuser => $opt{dbuser}[$x-1], dbnumber => $x } );
 		for $db (@{$info->{db}}) {
             for my $line (split /\n/, $db->{slurp}) {
